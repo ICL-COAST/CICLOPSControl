@@ -1,0 +1,30 @@
+%! TEX root = ../main.tex
+
+\documentclass[../main.tex]{subfiles}
+
+\begin{document}
+\chapter{July 8th to July 13th, 2025}
+Second meeting with Dr Amato.
+\section{Meeting Minutes}
+\subsection{Quick notes}
+\begin{itemize}
+    \item Dr Amato seemed happy with my progress.
+    \item He will give me access to 227 and update me on the risk assessments, I had to give him my RAFT form.
+    \item Explained how mount models work: Input desired positions then platesolves for actual position. Many points creates a spherical surface of the errors.
+    \item Assembly as soon as possible.
+    \item New project: Programmatic control of the mount. Start by following a predetermined path, closed loop control is the end goal.
+    \item Need to book Blackett roof for observations, but for now use the open area in floor 3 next to his room.
+    \item Model Creator was just not maximised!! I reinstalled ASCOM 7, 6.6, Mount Creator, .NET frameworks and everything, I was so stupid!!
+\end{itemize}
+\section{Quick notes}
+\begin{itemize}
+    \item PyPOGS might not be usable with 10Micron mount, I will be using ASCOM python interface for now. The \href{https://ascom-standards.org/Help/Developer/html/T_ASCOM_DeviceInterface_ITelescopeV3.htm}{ ITelescopeV3 interface} has all the functions I need.
+    \item Mount Creator is maintained and can be run on command line for automatic control. However, it seems everyone uses \href{https://mworion.github.io/MountWizzard4/}{Mount Wizzard 4} for mount calbration so I will look into it.
+    \item Dr Amato suggested using the mount without telescope/weight attached, I don't think that is a good idea
+    \item Sent: Is it safe to motorise (skew) the AZ1000HPS ALTAZIMUTH MOUNT axes without putting the telescope and the counterweight on? I want to try testing slewing over the ASCOM protocol with Python safely, without all the heavy weight on the mount, which might cause expensive damage. To \href{https://10micron.eu/en/contact}{their contact page}. I also posted the question to the \href{https://www.10micron.com/forum/viewtopic.php?f=2&t=2283}{10Micron forum}.
+    \item MountWizzard4 has \href{https://www.youtube.com/@orion49m/videos}{video tutorials}.
+    \item MountWizzard4 is kind of annoying, for now if I want to run it use run.bat as it requires Python 3.10 and I have 3.11 installed natively.
+    \item Using the ASCOM OMNI-simulator and win32com works, it just simply works.
+    \item Possibly will use ASTAP from now on for plate solving.
+\end{itemize}
+\end{document}

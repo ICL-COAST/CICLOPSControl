@@ -1,0 +1,136 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% LaTeX template for weekly reports
+%
+% Author:
+%   Davide Amato, Imperial College London, d.amato@imperial.ac.uk
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Magic comment to set root folder for VSCode / LaTeX Workshop 
+%! TEX root = '/home/davide/Documents/Manuscripts/Notebooks/Template/main.tex'
+\documentclass{scrreprt}
+
+% ----- PACKAGES -----
+% Text encoding
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% Math fonts
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}         % bold math for vectors
+\usepackage{mathabx}    % astronomical symbols
+\usepackage{mathtools}  % arrows, etc
+\usepackage{dsfont}     % doublestroke fonts
+
+% Typesetting of SI units 
+\usepackage{siunitx}
+
+% Margins and page geometry
+\usepackage[margin=3cm]{geometry}
+
+% Headers
+\usepackage{fancyhdr}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{multirow}
+
+% Highlighting and TODO notes
+\usepackage[dvipsnames]{xcolor}
+\usepackage{soul}
+\usepackage{todonotes}
+
+% Figures
+\usepackage{graphicx}
+\usepackage{subcaption}
+\captionsetup{width=\textwidth}
+\usepackage{wrapfig}
+
+% Custom lists
+\usepackage{enumitem}
+
+% Code listings
+\usepackage{listings}
+% \usepackage{matlab-prettifier}
+
+% Dirty hack to prevent warnings about \float@addtolist by KOMAScript. See: https://tex.stackexchange.com/questions/51867/koma-warning-about-toc
+\usepackage{scrhack}            % 
+
+% Symbols
+\usepackage{wasysym}
+
+% Use Helvetica fonts
+\usepackage{helvet}
+\newcommand*{\note}[1]{{\fontfamily{phv}\selectfont\small #1}}
+
+% Dummy text
+\usepackage{lipsum}
+
+% Hyperlinks and cross-references. Cleveref should always be used last, https://tex.stackexchange.com/questions/164780/cleveref-links-missing.
+\usepackage[%
+breaklinks=true,%
+colorlinks=true,%
+citecolor=ForestGreen,%
+urlcolor=blue,%
+pdfauthor={Martin Leung},%
+pdftitle={Research logbook}%
+]{hyperref}
+\usepackage{cleveref}
+
+% Biblatex bibliography, using biber as backend
+\usepackage[citestyle=numeric,%
+style=numeric,%
+sorting=none,%
+giveninits=true,%
+backend=biber]{biblatex}
+\addbibresource{main.bib}
+\AtEveryBibitem{% Do not print language of the publication
+  \clearlist{language}%
+}
+
+%% Math macros
+\DeclareMathOperator{\atantwo}{atan2}
+\DeclareMathOperator{\arctantwo}{arctan2}
+\DeclareMathOperator{\sign}{sign}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareSIUnit\day{d}
+
+% Use subfiles
+\usepackage{subfiles}
+
+% Set graphicspath
+\graphicspath{{graphics/}}
+
+% Title
+\title{Your Research Logbook}
+\author{Your Name\thanks{E-mail: \href{mailto:your.email@imperial.ac.uk}{your.email@imperial.ac.uk}}}
+\date{\today}
+
+% Header
+\pagestyle{fancy}
+% Chapter names in header
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\lhead{Y. Name}
+% \rhead{Autumn 2021 logbook}
+
+\begin{document}
+  \maketitle
+
+  \tableofcontents
+
+  \listoffigures
+
+  \listoftables
+  
+  % Insert sections here
+  % \subfile{sections/section0.tex} % Template section
+  \subfile{sections/section1.tex}
+  \subfile{sections/section2.tex}
+
+  \printbibliography
+
+  % \appendix
+  % 
+  % \subfile{sections/appendix.tex}
+
+\end{document}
