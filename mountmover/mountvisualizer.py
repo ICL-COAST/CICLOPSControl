@@ -23,7 +23,7 @@ class MountVisualizer:
         
         # Create figure with both polar and rectangular plots
         self.fig = Figure(figsize=(8, 8))  # Increased height to accommodate extra plot
-        gs = GridSpec(3, 2, figure=self.fig, height_ratios=[2, 1, 1])
+        gs = GridSpec(2, 2, figure=self.fig, height_ratios=[1, 1])
         
         # Polar plot for Alt/Az
         self.polar_ax = self.fig.add_subplot(gs[0, 0], projection='polar')
@@ -35,7 +35,19 @@ class MountVisualizer:
         self.polar_ax.set_yticklabels(['90°', '60°', '30°', '0°'])  # Invert labels (90° at center)
         self.polar_ax.grid(True)
         self.polar_point, = self.polar_ax.plot([], [], 'ro', markersize=8)
-        
+
+        # Polar plot for RA/DEC in Celestial coordinates
+        self.polar_ax_cel = self.fig.add_subplot(gs[1, 0], projection='polar')
+        self.polar_ax_cel.set_title("RA/DEC Position (Polar)")
+        self.polar_ax_cel.set_theta_zero_location('N')  # 0 degrees at North
+        self.polar_ax_cel.set_theta_direction(-1)       # Clockwise
+        self.polar_ax_cel.set_ylim(-90, 90)  # Set radial limits from 0 to 90 degrees
+        self.polar_ax_cel.set_yticks([0, 30, 60, 90])  # Radial ticks at these altitudes
+        self.polar_ax_cel.set_yticklabels(['90°', '60°', '30°', '0°'])  # Invert labels (90° at center)
+        self.polar_ax_cel.grid(True)
+        self.polar_point_cel, = self.polar_ax_cel.plot([], [], 'ro', markersize=8)
+        self.polar_point_cel_target, = self.polar_ax_cel.plot([], [], 'gx', markersize=8, label='Target')
+
         # Add Az-El rectangular plot
         self.azel_ax = self.fig.add_subplot(gs[0, 1])
         self.azel_ax.set_title("Az-El Position")
@@ -45,7 +57,18 @@ class MountVisualizer:
         self.azel_ax.set_ylim(0, 90)
         self.azel_ax.grid(True)
         self.azel_point, = self.azel_ax.plot([], [], 'bo', markersize=8)
-        
+
+        # Add RA/DEC rectangular plot in celestial coordinates
+        self.azel_ax_cel = self.fig.add_subplot(gs[1, 1])
+        self.azel_ax_cel.set_title("RA/DEC Position")
+        self.azel_ax_cel.set_xlabel("Right Ascension (°)")
+        self.azel_ax_cel.set_ylabel("Declination (°)")
+        self.azel_ax_cel.set_xlim(0, 24)
+        self.azel_ax_cel.set_ylim(-90, 90)
+        self.azel_ax_cel.grid(True)
+        self.azel_point_cel, = self.azel_ax_cel.plot([], [], 'bo', markersize=8)
+        self.azel_point_cel_target, = self.azel_ax_cel.plot([], [], 'gx', markersize=8, label='Target')
+
         # Embed plot in Tkinter window
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.draw()
@@ -74,9 +97,16 @@ class MountVisualizer:
                 # Get current position from mount
                 az = self.mount.Azimuth
                 alt = self.mount.Altitude
-                
+                ra = self.mount.RightAscension
+                dec = self.mount.Declination
+                target_ra = self.mount.RightAscension
+                target_dec = self.mount.Declination
+
+                # print(f"Current Position - Az: {az}, Alt: {alt}, RA: {ra}, Dec: {dec}")
+                # print(f"Target Position - RA: {target_ra}, Dec: {target_dec}")
+
                 # Update display with new position
-                self.update_display(az, alt)
+                self.update_display(az, alt, ra, dec, target_ra, target_dec)
             except Exception as e:
                 print(f"Error updating position: {e}")
                 
@@ -84,7 +114,7 @@ class MountVisualizer:
         if self.running:
             self.root.after(self.update_interval_ms, self.update_mount_position)
     
-    def update_display(self, azimuth, altitude):
+    def update_display(self, azimuth, altitude, ra, dec, target_ra=None, target_dec=None):
         """Update the visualizer with new position data"""
         # Convert azimuth to radians for polar plot
         az_rad = np.radians(azimuth)
@@ -96,7 +126,26 @@ class MountVisualizer:
         
         # Update Az-El rectangular plot
         self.azel_point.set_data([azimuth], [altitude])
-    
+
+        # Update celestial polar plot (RA/DEC)
+        ra_rad = np.radians(ra)
+        dec_rad = np.radians(dec)
+        self.polar_point_cel.set_data([ra_rad], [dec_rad])
+
+        # Update celestial Az-El rectangular plot
+        self.azel_point_cel.set_data([ra], [dec])
+
+        # If target coordinates are provided, update them as well
+        if target_ra is not None and target_dec is not None:
+            target_ra_rad = np.radians(target_ra)
+            target_dec_rad = np.radians(target_dec)
+            self.polar_point_cel_target.set_data([target_ra_rad], [target_dec_rad])
+            self.azel_point_cel_target.set_data([target_ra], [target_dec])
+        else:
+            # If no target coordinates, clear the target points
+            self.polar_point_cel_target.set_data([], [])
+            self.azel_point_cel_target.set_data([], [])
+
         # Update status labels
         self.alt_label.config(text=f"Alt: {altitude:.2f}°")
         self.az_label.config(text=f"Az: {azimuth:.2f}°")
