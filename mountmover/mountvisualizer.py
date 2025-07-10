@@ -25,6 +25,18 @@ class MountVisualizer:
         self.fig = Figure(figsize=(8, 8))  # Increased height to accommodate extra plot
         gs = GridSpec(2, 2, figure=self.fig, height_ratios=[1, 1])
         
+        x_values = range(0, 360, 20)  # 0, 20, 40, 60, 80
+        y_values = [20, 60, 0]
+
+        # Generate the points
+        altaz_path = []
+        for x in x_values:
+            for y in y_values:
+                altaz_path.append((x, y))
+
+        targets_az = np.array([t[0] for t in altaz_path])
+        targets_el = np.array([t[1] for t in altaz_path])
+
         # Polar plot for Alt/Az
         self.polar_ax = self.fig.add_subplot(gs[0, 0], projection='polar')
         self.polar_ax.set_title("Alt/Az Position (Polar)")
@@ -35,6 +47,9 @@ class MountVisualizer:
         self.polar_ax.set_yticklabels(['90°', '60°', '30°', '0°'])  # Invert labels (90° at center)
         self.polar_ax.grid(True)
         self.polar_point, = self.polar_ax.plot([], [], 'ro', markersize=8)
+        self.polar_point_target, = self.polar_ax.plot(np.deg2rad(targets_az), 90 - targets_el, 'gx', markersize=4, label='Target')
+        for i, (az, el) in enumerate(zip(targets_az, targets_el)):
+            self.polar_ax.text(np.deg2rad(az), 90 - el + 10, f'{i+1}', fontsize=8, ha='center', va='center')
 
         # Polar plot for RA/DEC in Celestial coordinates
         self.polar_ax_cel = self.fig.add_subplot(gs[1, 0], projection='polar')
@@ -57,6 +72,9 @@ class MountVisualizer:
         self.azel_ax.set_ylim(0, 90)
         self.azel_ax.grid(True)
         self.azel_point, = self.azel_ax.plot([], [], 'bo', markersize=8)
+        self.azel_point_target, = self.azel_ax.plot(targets_az, targets_el, 'gx', markersize=4, label='Target')
+        for i, (az, el) in enumerate(zip(targets_az, targets_el)):
+            self.azel_ax.text(az + 10, el + 5, f'{i+1}', fontsize=8, ha='center', va='center')
 
         # Add RA/DEC rectangular plot in celestial coordinates
         self.azel_ax_cel = self.fig.add_subplot(gs[1, 1])
@@ -130,7 +148,7 @@ class MountVisualizer:
         # Update celestial polar plot (RA/DEC)
         ra_rad = np.radians(ra)
         dec_rad = np.radians(dec)
-        self.polar_point_cel.set_data([ra_rad], [dec_rad])
+        self.polar_point_cel.set_data([ra_rad * 15], [dec_rad])
 
         # Update celestial Az-El rectangular plot
         self.azel_point_cel.set_data([ra], [dec])
@@ -139,7 +157,7 @@ class MountVisualizer:
         if target_ra is not None and target_dec is not None:
             target_ra_rad = np.radians(target_ra)
             target_dec_rad = np.radians(target_dec)
-            self.polar_point_cel_target.set_data([target_ra_rad], [target_dec_rad])
+            self.polar_point_cel_target.set_data([target_ra_rad * 15], [target_dec_rad])
             self.azel_point_cel_target.set_data([target_ra], [target_dec])
         else:
             # If no target coordinates, clear the target points
@@ -209,7 +227,8 @@ if __name__ == "__main__":
             visualizer.start()
         else:
             print("No mount selected. Exiting...")
-    
+    except KeyboardInterrupt:
+        print("Exiting visualizer...")
     finally:
         # Clean up COM
         pythoncom.CoUninitialize()

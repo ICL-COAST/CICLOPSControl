@@ -31,15 +31,17 @@ def slew_altaz(mount, azimuth, altitude):
     if mount.CanMoveAxis(0) and mount.CanMoveAxis(1):  # Check Alt/Az capability
         # For 10Micron, we need to set tracking off for Alt/Az slewing
         tracking_state = mount.Tracking
-        # mount.Tracking = False
-        mount.Tracking = True
+        mount.Tracking = False
+        # mount.Tracking = True
 
         # Slew to position
-        # mount.SlewToAltAzAsync(azimuth, altitude)
-        mount.SlewToCoordinatesAsync(azimuth, altitude)
+        mount.SlewToAltAzAsync(azimuth, altitude)
+        # mount.SlewToCoordinatesAsync(azimuth, altitude)
         print(f"Slewing to Az: {azimuth}, Alt: {altitude}")
-        time.sleep(5)
+        time.sleep(2)
         mount.AbortSlew() 
+        mount.MoveAxis(0, 0.01)
+        mount.MoveAxis(1, 0.01)
         print("Slew aborted")
         
         # Wait for slew to complete
@@ -72,20 +74,28 @@ def main():
         # Format: [(az1, alt1), (az2, alt2), ...]
         # altaz_path = [
         #     (60, 20),
-        #     (60, 80),
-        #     (180, 20),
-        #     (300, 80),
-        #     (300, 20),
+        #     (120, 20),
+        #     (45, 45),
+        #     (135, 45),
+        #     (270, 20),
         #     (180, 45)
         # ]
-        altaz_path = [
-            (4, -20),
-            (4, 20),
-            (12, 0),
-            (20, 20),
-            (20, -20)
-        ]
-        
+        # altaz_path = [
+        #     (4, -20),
+        #     (4, 20),
+        #     (12, 0),
+        #     (20, 20),
+        #     (20, -20)
+        # ]
+        x_values = range(0, 360, 20)  # 0, 20, 40, 60, 80
+        y_values = [20, 60, 0]
+
+        # Generate the points
+        altaz_path = []
+        for x in x_values:
+            for y in y_values:
+                altaz_path.append((x, y))
+
         print("Following Alt/Az path...")
         follow_path(mount, altaz_path)
         
