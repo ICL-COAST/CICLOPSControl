@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
                             QWidget, QPushButton, QSlider, QLabel, QComboBox,
                             QFileDialog, QGroupBox, QDoubleSpinBox, QGridLayout)
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QImage
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 import signal
@@ -38,14 +39,21 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.current_marker = None
         self.last_trail_update = None
         self.trail_update_interval = 1.0  # Update trail every 1 second
+
+        self.topo_trail = None
+        self.topo_marker = None
         
+        self.sky_marker = None
+        self.sky_trail = None
+
         # Earth texture and rotation
         self.earth_mesh = None
         self.terminator_circle = None
         self.london_marker = None
         
         # London coordinates (latitude, longitude)
-        self.london_lat = 51.5074  # degrees North
+        # self.london_lat = 51.5074  # degrees North
+        self.london_lat = 49  # degrees North
         self.london_lon = -0.1278  # degrees East (negative for West)
         
         # Load ephemeris for astronomical calculations
@@ -58,6 +66,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Create initial plot
         self.setup_3d_view()
+
+        self.load_tle_data()  # Load TLE data on startup
         
         # Setup timer for animation
         self.timer = QTimer()
@@ -76,11 +86,16 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.view_layout = QGridLayout()
         self.view_widget = gl.GLViewWidget()
         self.topo_widget = gl.GLViewWidget()
-        self.sf_widget = gl.GLViewWidget()
+        self.sky_widget = pg.PlotWidget()
 
         self.view_layout.addWidget(self.view_widget, 0, 0)
         self.view_layout.addWidget(self.topo_widget, 0, 1)
-        self.view_layout.addWidget(self.sf_widget, 0, 2)
+        self.view_layout.addWidget(self.sky_widget, 0, 2)
+
+        self.view_layout.setColumnStretch(0, 1)
+        self.view_layout.setColumnStretch(1, 1)
+        self.view_layout.setColumnStretch(2, 1)
+
         main_layout.addLayout(self.view_layout)
 
         # Controls container
@@ -171,8 +186,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Set the central widget
         self.setCentralWidget(main_widget)
-        self.load_tle_data()  # Load TLE data on startup
-    
+
     def setup_3d_view(self):
         """Initialize the 3D view with Earth"""
         # Set view center and distance
@@ -188,11 +202,6 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.earth_mesh = gl.GLMeshItem(meshdata=sphere_mesh, smooth=True, color=(0.2, 0.5, 0.8, 0.8), shader='shaded')
         self.view_widget.addItem(self.earth_mesh)
         
-        # Add London marker
-        self.update_london_marker()
-        
-        # Add terminator circle
-        self.update_terminator_circle()
         
         # Grid
         grid = gl.GLGridItem()
@@ -200,84 +209,124 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         grid.setSpacing(1000, 1000)
         self.view_widget.addItem(grid)
 
-        self.topo_widget
+        #Setup topological view
+        self.topo_widget.setCameraPosition(distance=1000)
+        topo_axis = gl.GLAxisItem()
+        topo_axis.setSize(1000, 1000, 1000)
+        topo_grid = gl.GLGridItem()
+        topo_grid.setSize(2000, 2000)
+        topo_grid.setSpacing(100, 100)
+        self.topo_widget.addItem(topo_axis) 
+        self.topo_widget.addItem(topo_grid)
 
+        #Setup sky chart
+        north_label = pg.TextItem("N", color=(255, 0, 0))
+        north_label.setPos(0, 1.1)
+        north_label.setAnchor((0.5, 0.5))
+        self.sky_widget.addItem(north_label)
+
+        east_label = pg.TextItem("E", color=(255, 0, 0))
+        east_label.setPos(-1.1, 0)
+        east_label.setAnchor((0.5, 0.5))
+        self.sky_widget.addItem(east_label) 
+
+        south_label = pg.TextItem("S", color=(255, 0, 0))
+        south_label.setPos(0, -1.1)
+        south_label.setAnchor((0.5, 0.5))
+        self.sky_widget.addItem(south_label)
+
+        west_label = pg.TextItem("W", color=(255, 0, 0))
+        west_label.setPos(1.1, 0)
+        west_label.setAnchor((0.5, 0.5))
+        self.sky_widget.addItem(west_label)
+
+        self.sky_widget.setAspectLocked(True)
+        self.sky_widget.setRange(xRange=(-1.5, 1.5), yRange=(-1.5, 1.5))
+        
+        horizon_circle = pg.QtWidgets.QGraphicsEllipseItem(-1, -1, 2, 2)
+        horizon_circle.setPen(pg.mkPen('w', width=1))
+        self.sky_widget.addItem(horizon_circle)
+
+        # Add London marker
+        self.update_london_marker()
+        
+        # Add terminator circle
+        self.update_terminator_circle()
     
-    def update_london_marker(self):
-        """Add or update a marker for London in the TEME reference frame"""
-        # Remove existing marker if any
-        if self.london_marker is not None:
-            self.view_widget.removeItem(self.london_marker)
+    def teme_to_topographic(self, teme_position):
+        """
+        Convert a position vector from TEME reference frame to a topographic frame centered at London.
+        
+        Args:
+            teme_position (np.ndarray): Position vector [x, y, z] in TEME frame (km)
+            
+        Returns:
+            np.ndarray: Position vector [east, north, up] in the topographic frame (km)
+        """
+        # Get the current time in Skyfield format
+        t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day,
+                    self.current_time.hour, self.current_time.minute, self.current_time.second)
         
         # Create a Skyfield Topos object for London's location
         london = sf.wgs84.latlon(self.london_lat, self.london_lon)
         
-        # Get the current time in Skyfield format
-        t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day,
-                      self.current_time.hour, self.current_time.minute, self.current_time.second)
-        
-        # Calculate London's position in the TEME frame
-        # First, get London's position relative to Earth's center
+        # Get London's position in the TEME frame
         london_geocentric = london.at(t)
-        
-        # Convert to TEME frame coordinates
         london_teme_pos = london_geocentric.position.km
         
-        # Create marker with the TEME position
-        self.london_marker = gl.GLScatterPlotItem(
-            pos=np.array([london_teme_pos]),
-            color=(1, 0, 0, 1),  # Red color
-            size=10
-        )
-        self.view_widget.addItem(self.london_marker)
-    
-    def update_terminator_circle(self):
-        """Calculate and display the terminator circle (day/night boundary)"""
-        # Remove existing terminator if it exists
-        if self.terminator_circle is not None:
-            self.view_widget.removeItem(self.terminator_circle)
+        # Calculate the relative position vector (satellite position relative to London)
+        rel_position = teme_position - london_teme_pos
         
-        # Calculate Sun position relative to Earth at current time
-        t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day, 
-                      self.current_time.hour, self.current_time.minute, self.current_time.second)
+        # Convert London's ra/dec to radians
+        ra, dec, _ = london_geocentric.radec()
+        ra = ra.radians
+        dec = dec.radians
+
+        # Calculate rotation from TEME to topographic frame (East-North-Up)
+        sin_ra = np.sin(ra)
+        cos_ra = np.cos(ra)
+        sin_dec = np.sin(dec)
+        cos_dec = np.cos(dec)
+
+        # Rotation matrix from TEME to [East, North, Up]
+        rotation = np.array([
+            [-sin_ra, cos_ra, 0],
+            [-sin_dec*cos_ra, -sin_dec*sin_ra, cos_dec],
+            [cos_dec*cos_ra, cos_dec*sin_ra, sin_dec]
+        ])
         
-        sun_pos = (self.sun - self.earth).at(t).position.km
-        sun_direction = sun_pos / np.linalg.norm(sun_pos)
+        # Apply rotation to get the position in the topographic frame
+        topo_position = rotation @ rel_position
         
-        # Generate points for the terminator circle
-        # The terminator is the great circle perpendicular to the sun direction
-        n_points = 100
-        circle_points = []
+        return topo_position  # Returns [east, north, up]
+
+    def topo_to_azel(self, topo_position):
+        """
+        Convert a topographic position vector to azimuth and elevation angles.
         
-        # Find two vectors perpendicular to sun_direction and to each other
-        u = np.array([0, 0, 1])
-        if abs(np.dot(u, sun_direction)) > 0.9:
-            # If sun_direction is too close to [0,0,1], use a different vector
-            u = np.array([1, 0, 0])
+        Args:
+            topo_position (np.ndarray): Position vector [east, north, up] in the topographic frame (km)
+            
+        Returns:
+            tuple: (azimuth, elevation) in degrees
+        """
+        east, north, up = topo_position
         
-        # First perpendicular vector
-        u = u - np.dot(u, sun_direction) * sun_direction
-        u = u / np.linalg.norm(u)
+        # Calculate horizontal distance
+        horizontal_distance = np.sqrt(east**2 + north**2)
         
-        # Second perpendicular vector (perpendicular to both sun_direction and u)
-        v = np.cross(sun_direction, u)
-        v = v / np.linalg.norm(v)
-        
-        # Generate circle points
-        for i in range(n_points + 1):
-            angle = 2 * math.pi * i / n_points
-            point = self.earth_radius * (u * math.cos(angle) + v * math.sin(angle))
-            circle_points.append(point)
-        
-        # Create line connecting all points
-        self.terminator_circle = gl.GLLinePlotItem(
-            pos=np.array(circle_points),
-            color=(0.9, 0.7, 0.2, 1),  # Golden color
-            width=2,
-            mode='line_strip'  # Connect points as a continuous line
-        )
-        self.view_widget.addItem(self.terminator_circle)
-    
+        # Azimuth angle (in radians)
+        azimuth = np.arctan2(east, north)
+
+        # Elevation angle (in radians)
+        elevation = np.arctan2(up, horizontal_distance)
+
+        # Convert angles to degrees
+        azimuth = np.degrees(azimuth)
+        elevation = np.degrees(elevation)
+
+        return azimuth, elevation
+
     def toggle_animation(self):
         """Start or stop animation"""
         if self.is_animating:
@@ -305,14 +354,15 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         angle = (utc_hour * 15) % 360
         
         # Reset and apply rotation
-        self.earth_mesh.resetTransform()
-        self.earth_mesh.rotate(angle, 0, 0, 1)  # Rotate around z-axis
+        # self.earth_mesh.resetTransform()
+        # self.earth_mesh.rotate(angle, 0, 0, 1)  # Rotate around z-axis
         
         # Update London marker position after Earth rotation
         self.update_london_marker()
         
         # Only update satellite position, not the entire orbit trail
         self.update_satellite_position()
+        
         
         # Update orbit trail less frequently
         if (self.last_trail_update is None or 
@@ -323,7 +373,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.cycle_end = perf_counter()
         print(f"FPS: {1 / (self.cycle_end - self.cycle_start):.2f}")
         self.cycle_start = perf_counter()
-    
+
+
     def update_satellite_position(self):
         """Update only the satellite position marker - fast update"""
         if not self.sat_combo.currentText():
@@ -334,20 +385,47 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Calculate current position
         t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day, 
-                      self.current_time.hour, self.current_time.minute, self.current_time.second)
+                    self.current_time.hour, self.current_time.minute, self.current_time.second)
         current_pos = satellite.at(t).position.km
         
-        # Update or create current position marker
-        if self.current_marker is not None:
-            self.view_widget.removeItem(self.current_marker)
+        # Create or update current position marker
+        if self.current_marker is None:
+            self.current_marker = gl.GLScatterPlotItem(
+                pos=np.array([current_pos]),
+                color=(1, 1, 0, 1),
+                size=15
+            )
+            self.view_widget.addItem(self.current_marker)
+        else:
+            self.current_marker.setData(pos=np.array([current_pos]))
+
+        # Create or update topographic marker
+        topo_pos = self.teme_to_topographic(current_pos)
         
-        self.current_marker = gl.GLScatterPlotItem(
-            pos=np.array([current_pos]),
-            color=(1, 1, 0, 1),
-            size=15
-        )
-        self.view_widget.addItem(self.current_marker)
-    
+        if self.topo_marker is None:
+            self.topo_marker = gl.GLScatterPlotItem(
+                pos=np.array([topo_pos]),
+                color=(0, 1, 0, 1),
+                size=15
+            )
+            self.topo_widget.addItem(self.topo_marker)
+        else:
+            self.topo_marker.setData(pos=np.array([topo_pos]))
+
+        # Convert topographic position to azimuth/elevation
+        azimuth, elevation = self.topo_to_azel(topo_pos)
+
+        # Create or update sky marker
+        if self.sky_marker is None:
+            self.sky_marker = pg.ScatterPlotItem(
+                pen=pg.mkPen('y', width=2),
+                brush=pg.mkBrush(255, 255, 0, 200),
+                size=10
+            )
+            self.sky_widget.addItem(self.sky_marker)
+        else:
+            self.sky_marker.setData(pos=np.array([azimuth, elevation]))
+
     def update_orbit_trail(self):
         """Update the orbit trail - less frequent update"""
         if not self.sat_combo.currentText():
@@ -363,13 +441,95 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # Calculate orbit points
         positions = self.compute_satellite_positions(satellite, start_time, self.current_time, points=50)
         
-        # Update or create orbit trail
-        if self.orbit_trail is not None:
-            self.view_widget.removeItem(self.orbit_trail)
+        # Create or update orbit trail
+        if self.orbit_trail is None:
+            self.orbit_trail = gl.GLLinePlotItem(pos=positions, color=(1, 0, 0, 1), width=2)
+            self.view_widget.addItem(self.orbit_trail)
+        else:
+            self.orbit_trail.setData(pos=positions)
+
+        # Create or update topographic trail
+        topo_positions = self.compute_satellite_positions(satellite, self.current_time - timedelta(minutes=5), self.current_time + timedelta(minutes=5), points=50)
+        topo_positions = [self.teme_to_topographic(pos) for pos in topo_positions]
+        if self.topo_trail is None:
+            self.topo_trail = gl.GLLinePlotItem(pos=topo_positions, color=(0, 1, 0, 1), width=2)
+            self.topo_widget.addItem(self.topo_trail)
+        else:
+            self.topo_trail.setData(pos=topo_positions)
+
+        sky_positions = [self.topo_to_azel(pos) for pos in topo_positions]
+        if self.sky_trail is None:
+            self.sky_trail = pg.PlotCurveItem(
+                x=[pos[0] for pos in sky_positions],
+                y=[pos[1] for pos in sky_positions],
+                pen=pg.mkPen('r', width=2)
+            )
+            self.sky_widget.addItem(self.sky_trail)
+
+    def update_london_marker(self):
+        """Add or update a marker for London in the TEME reference frame"""
+        # Create a Skyfield Topos object for London's location
+        london = sf.wgs84.latlon(self.london_lat, self.london_lon)
         
-        self.orbit_trail = gl.GLLinePlotItem(pos=positions, color=(1, 0, 0, 1), width=2)
-        self.view_widget.addItem(self.orbit_trail)
-    
+        # Get the current time in Skyfield format
+        t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day,
+                    self.current_time.hour, self.current_time.minute, self.current_time.second)
+        
+        # Calculate London's position in the TEME frame
+        london_geocentric = london.at(t)
+        london_teme_pos = london_geocentric.position.km
+        
+        # Create or update marker with the TEME position
+        if self.london_marker is None:
+            self.london_marker = gl.GLScatterPlotItem(
+                pos=np.array([london_teme_pos]),
+                color=(1, 0, 0, 1),  # Red color
+                size=10
+            )
+            self.view_widget.addItem(self.london_marker)
+        else:
+            self.london_marker.setData(pos=np.array([london_teme_pos]))
+
+    def update_terminator_circle(self):
+        """Calculate and display the terminator circle (day/night boundary)"""
+        # Calculate Sun position relative to Earth at current time
+        t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day, 
+                    self.current_time.hour, self.current_time.minute, self.current_time.second)
+        
+        sun_pos = (self.sun - self.earth).at(t).position.km
+        sun_direction = sun_pos / np.linalg.norm(sun_pos)
+        
+        # Generate points for the terminator circle
+        n_points = 100
+        circle_points = []
+        
+        # Find two vectors perpendicular to sun_direction and to each other
+        u = np.array([0, 0, 1])
+        if abs(np.dot(u, sun_direction)) > 0.9:
+            u = np.array([1, 0, 0])
+        
+        u = u - np.dot(u, sun_direction) * sun_direction
+        u = u / np.linalg.norm(u)
+        v = np.cross(sun_direction, u)
+        v = v / np.linalg.norm(v)
+        
+        # Generate circle points
+        for i in range(n_points + 1):
+            angle = 2 * math.pi * i / n_points
+            point = self.earth_radius * (u * math.cos(angle) + v * math.sin(angle))
+            circle_points.append(point)
+        
+        # Create or update line connecting all points
+        if self.terminator_circle is None:
+            self.terminator_circle = gl.GLLinePlotItem(
+                pos=np.array(circle_points),
+                color=(0.9, 0.7, 0.2, 1),  # Golden color
+                width=2,
+                mode='line_strip'
+            )
+            self.view_widget.addItem(self.terminator_circle)
+        else:
+            self.terminator_circle.setData(pos=np.array(circle_points))
     def update_orbits(self):
         """Update the satellite orbits in the 3D view - called when settings change"""
         # Clear previous orbit paths
@@ -429,8 +589,9 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
     
     def on_time_slider_changed(self, value):
         """Update time when slider changes"""
-        value = value / 10
-        self.current_time = datetime.now() + timedelta(hours=value)
+        value = value / 100
+        # self.current_time = datetime.now() + timedelta(hours=value)
+        self.current_time = datetime(2025, 7, 15, 0, 0, 0) + timedelta(hours=value)
         self.time_label.setText(f"Current Time: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Update Earth-related visuals
@@ -454,13 +615,19 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.animation_speed = value
         # Don't change timer interval - keep it at 100fps
         # The speed now controls how much time advances per frame
-    
+
+
 if __name__ == "__main__":
     # Enable antialiasing for prettier plots
     pg.setConfigOptions(antialias=True)
     
     app = QApplication(sys.argv)
     window = SatelliteOrbitVisualizerGL()
+    screen = app.screens()[1]
+    window.move(screen.geometry().topLeft())
+    window.maximumSize()
+
+
     window.show()
 
     def signal_handler(signal, frame):
