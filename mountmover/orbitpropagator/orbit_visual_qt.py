@@ -219,6 +219,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.topo_widget.addItem(topo_axis) 
         self.topo_widget.addItem(topo_grid)
 
+
         #Setup sky chart
         north_label = pg.TextItem("N", color=(255, 0, 0))
         north_label.setPos(0, 1.1)
@@ -308,7 +309,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
             topo_position (np.ndarray): Position vector [east, north, up] in the topographic frame (km)
             
         Returns:
-            tuple: (azimuth, elevation) in degrees
+            tuple: (azimuth, elevation) in radians
         """
         east, north, up = topo_position
         
@@ -321,11 +322,23 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # Elevation angle (in radians)
         elevation = np.arctan2(up, horizontal_distance)
 
-        # Convert angles to degrees
-        azimuth = np.degrees(azimuth)
-        elevation = np.degrees(elevation)
-
         return azimuth, elevation
+    
+    def azel_to_sky(self, azimuth, elevation):
+        """
+        Convert azimuth and elevation angles to sky chart coordinates (East, North).
+
+        Args:
+            azimuth (float): Azimuth angle in degrees
+            elevation (float): Elevation angle in degrees
+            
+        Returns:
+            tuple: (East, North) coordinates in sky chart coordinates
+        """
+        radius = np.cos(elevation)  # Radius in the sky chart
+        east = - radius * np.sin(azimuth) # Negative x for East in sky chart
+        north = radius * np.cos(azimuth)
+        return east, north
 
     def toggle_animation(self):
         """Start or stop animation"""
@@ -414,6 +427,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
 
         # Convert topographic position to azimuth/elevation
         azimuth, elevation = self.topo_to_azel(topo_pos)
+        # Convert to rectangular coordinates for sky chart
+        sky_x, sky_y = self.azel_to_sky(azimuth, elevation)
 
         # Create or update sky marker
         if self.sky_marker is None:
@@ -424,7 +439,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
             )
             self.sky_widget.addItem(self.sky_marker)
         else:
-            self.sky_marker.setData(pos=np.array([azimuth, elevation]))
+            self.sky_marker.setData(pos=np.array([[sky_x, sky_y]]))
+            print(f"Sky Position: Azimuth={azimuth:.2f}, Elevation={elevation:.2f}, Sky X={sky_x:.2f}, Sky Y={sky_y:.2f}")
 
     def update_orbit_trail(self):
         """Update the orbit trail - less frequent update"""
@@ -458,6 +474,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
             self.topo_trail.setData(pos=topo_positions)
 
         sky_positions = [self.topo_to_azel(pos) for pos in topo_positions]
+        sky_positions = [self.azel_to_sky(azimuth, elevation) for azimuth, elevation in sky_positions]
         if self.sky_trail is None:
             self.sky_trail = pg.PlotCurveItem(
                 x=[pos[0] for pos in sky_positions],
@@ -465,6 +482,11 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
                 pen=pg.mkPen('r', width=2)
             )
             self.sky_widget.addItem(self.sky_trail)
+        else:
+            self.sky_trail.setData(
+                x=[pos[0] for pos in sky_positions],
+                y=[pos[1] for pos in sky_positions]
+            )
 
     def update_london_marker(self):
         """Add or update a marker for London in the TEME reference frame"""
@@ -576,16 +598,16 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # file_name, _ = QFileDialog.getOpenFileName(self, "Open TLE File", "", "Text Files (*.txt);;All Files (*)")
         
         # if file_name:
-        try:
-            import os
-            satellites = sf.load.tle_file(os.path.join(os.path.dirname(__file__), 'tle.txt'))
-            for sat in satellites:
-                self.satellites[sat.name] = sat
-                self.sat_combo.addItem(sat.name)
-            
-            self.update_orbits()
-        except Exception as e:
-            print(f"Error loading TLE file: {e}")
+        # try:
+        import os
+        satellites = sf.load.tle_file(os.path.join(os.path.dirname(__file__), 'tle.txt'))
+        for sat in satellites:
+            self.satellites[sat.name] = sat
+            self.sat_combo.addItem(sat.name)
+        
+        self.update_orbits()
+        # except Exception as e:
+        #     print(f"Error loading TLE file: {e}")
     
     def on_time_slider_changed(self, value):
         """Update time when slider changes"""
