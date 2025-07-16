@@ -17,6 +17,8 @@ import astropy.units as u
 import astropy.coordinates as coord
 from astropy.time import Time as astropy_time
 
+from earth import GLTexturedSphereItem
+
 import win32com.client
 
 class SatelliteOrbitVisualizerGL(QMainWindow):
@@ -270,11 +272,23 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.view_widget.addItem(axis)
         
         # Add Earth
-        sphere_mesh = gl.MeshData.sphere(rows=40, cols=40, radius=self.earth_radius)
-        self.earth_mesh = gl.GLMeshItem(meshdata=sphere_mesh, smooth=True, color=(0.2, 0.5, 0.8, 0.8), shader='shaded')
+        # sphere_mesh = gl.MeshData.sphere(rows=40, cols=40, radius=self.earth_radius)
+        # self.earth_mesh = gl.GLMeshItem(meshdata=sphere_mesh, smooth=True, color=(0.2, 0.5, 0.8, 0.8), shader='shaded')
+        # self.view_widget.addItem(self.earth_mesh)
+        from PIL import Image
+        earth_image = Image.open(os.path.join(os.path.dirname(__file__), "earth_texture.jpg"))
+        earth_image = earth_image.transpose(Image.ROTATE_90).transpose(Image.FLIP_LEFT_RIGHT)
+        earth_array = np.array(earth_image)
+
+        if earth_array.shape[2] == 3:  # RGB image
+            earth_rgba = np.zeros((earth_array.shape[0], earth_array.shape[1], 4), dtype=np.uint8)
+            earth_rgba[..., :3] = earth_array
+            earth_rgba[..., 3] = 255  # Full opacity
+        else:
+            earth_rgba = earth_array
+        self.earth_mesh = GLTexturedSphereItem(earth_rgba)
         self.view_widget.addItem(self.earth_mesh)
-        
-        
+
         # Grid
         grid = gl.GLGridItem()
         grid.setSize(20000, 20000)
