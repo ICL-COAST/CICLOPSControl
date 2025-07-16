@@ -17,6 +17,7 @@ import astropy.units as u
 import astropy.coordinates as coord
 from astropy.time import Time as astropy_time
 
+
 from earth import GLTexturedSphereItem
 
 import win32com.client
@@ -55,7 +56,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
 
         # Earth texture and rotation
         self.earth_mesh = None
-        self.terminator_circle = None
+        self.terminator_circle = []
         self.london_marker = None
         
         # London coordinates (latitude, longitude)
@@ -170,7 +171,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         speed_layout = QHBoxLayout()
         speed_layout.addWidget(QLabel("Speed:"))
         self.speed_spinbox = QDoubleSpinBox()
-        self.speed_spinbox.setRange(0.1, 10.0)
+        self.speed_spinbox.setRange(0.1, 100.0)
         self.speed_spinbox.setValue(1.0)
         self.speed_spinbox.setSingleStep(0.1)
         self.speed_spinbox.valueChanged.connect(self.on_speed_changed)
@@ -277,7 +278,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # self.view_widget.addItem(self.earth_mesh)
         from PIL import Image
         earth_image = Image.open(os.path.join(os.path.dirname(__file__), "earth_texture.jpg"))
-        earth_image = earth_image.transpose(Image.ROTATE_90).transpose(Image.FLIP_LEFT_RIGHT)
+        earth_image = earth_image.transpose(Image.ROTATE_90).transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.FLIP_TOP_BOTTOM)
         earth_array = np.array(earth_image)
 
         if earth_array.shape[2] == 3:  # RGB image
@@ -523,6 +524,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
                 color=(1, 1, 0, 1),
                 size=15
             )
+            self.current_marker.setGLOptions('opaque')
             self.view_widget.addItem(self.current_marker)
         else:
             self.current_marker.setData(pos=np.array([current_pos]))
@@ -574,6 +576,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # Create or update orbit trail
         if self.orbit_trail is None:
             self.orbit_trail = gl.GLLinePlotItem(pos=positions, color=(1, 0, 0, 1), width=2)
+            self.orbit_trail.setGLOptions('opaque')
             self.view_widget.addItem(self.orbit_trail)
         else:
             self.orbit_trail.setData(pos=positions)
@@ -626,6 +629,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
                 color=(1, 0, 0, 1),  # Red color
                 size=10
             )
+            self.london_marker.setGLOptions('opaque')
             self.view_widget.addItem(self.london_marker)
         else:
             self.london_marker.setData(pos=np.array([london_itrs_pos]))
@@ -645,7 +649,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Generate points for the terminator circle
         n_points = 100
-        circle_points = []
+        n_circles = 5
+        circles = []
         
         # Find two vectors perpendicular to sun_direction and to each other
         u_vector = np.array([0, 0, 1])
@@ -657,23 +662,31 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         v_vector = np.cross(sun_direction, u_vector)
         v_vector = v_vector / np.linalg.norm(v_vector)
 
-        # Generate circle points
-        for i in range(n_points + 1):
-            angle = 2 * math.pi * i / n_points
-            point = self.earth_radius * (u_vector * math.cos(angle) + v_vector * math.sin(angle))
-            circle_points.append(point)
+        # Generate circles with n_points points each
+        for j in range(n_circles):
+            circle_points = []
+            circle_radius = self.earth_radius * np.cos(j / n_circles * math.pi / 2)  # Decrease radius for each circle
+            for i in range(n_points + 1):
+                angle = 2 * math.pi * i / n_points
+                point = circle_radius * (u_vector * math.cos(angle) + v_vector * math.sin(angle))
+                point -= sun_direction * self.earth_radius * np.sin(j / n_circles * math.pi / 2)  # Offset circle position
+                circle_points.append(point)
+            circles.append(circle_points)
         
         # Create or update line connecting all points
-        if self.terminator_circle is None:
-            self.terminator_circle = gl.GLLinePlotItem(
-                pos=np.array(circle_points),
-                color=(0.9, 0.7, 0.2, 1),  # Golden color
-                width=2,
-                mode='line_strip'
-            )
-            self.view_widget.addItem(self.terminator_circle)
+        if len(self.terminator_circle) == 0:
+            for circle in range(n_circles):
+                self.terminator_circle.append(gl.GLLinePlotItem(
+                    pos=np.array(circles[circle]),
+                    color=(0.2, 0.2, 0.2, 1),  # Dark gray color
+                    width=2,
+                    mode='line_strip'
+                ))
+                self.terminator_circle[circle].setGLOptions('opaque')
+                self.view_widget.addItem(self.terminator_circle[circle])
         else:
-            self.terminator_circle.setData(pos=np.array(circle_points))
+            for circle in range(n_circles):
+                self.terminator_circle[circle].setData(pos=np.array(circles[circle]))
     def update_orbits(self):
         """Update the satellite orbits in the 3D view - called when settings change"""
         # Clear previous orbit paths
@@ -681,13 +694,13 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
             self.view_widget.removeItem(item)
         self.orbit_items = []
         
-        # Clear cached items
-        if self.orbit_trail is not None:
-            self.view_widget.removeItem(self.orbit_trail)
-            self.orbit_trail = None
-        if self.current_marker is not None:
-            self.view_widget.removeItem(self.current_marker)
-            self.current_marker = None
+        # # Clear cached items
+        # if self.orbit_trail is not None:
+        #     self.view_widget.removeItem(self.orbit_trail)
+        #     self.orbit_trail = None
+        # if self.current_marker is not None:
+        #     self.view_widget.removeItem(self.current_marker)
+        #     self.current_marker = None
         
         # Force update of both trail and position
         self.update_orbit_trail()
