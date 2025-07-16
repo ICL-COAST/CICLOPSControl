@@ -38,10 +38,10 @@ def slew_altaz(mount, azimuth, altitude):
         mount.SlewToAltAzAsync(azimuth, altitude)
         # mount.SlewToCoordinatesAsync(azimuth, altitude)
         print(f"Slewing to Az: {azimuth}, Alt: {altitude}")
-        time.sleep(2)
-        mount.AbortSlew() 
-        mount.MoveAxis(0, 0.01)
-        mount.MoveAxis(1, 0.01)
+        time.sleep(5)
+        # mount.AbortSlew() 
+        # mount.MoveAxis(0, 0.01)
+        # mount.MoveAxis(1, 0.01)
         print("Slew aborted")
         
         # Wait for slew to complete
@@ -64,7 +64,7 @@ def follow_path(mount, points):
 
 def main():
     # For OmniSim: "ASCOM.Simulator.Telescope"
-    # For real mount, leave blank to use chooser
+    # For real mount, leave blank to use chooser    
     mount = connect_to_mount("ASCOM.Simulator.Telescope")
     if not mount:
         return

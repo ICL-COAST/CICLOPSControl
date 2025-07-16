@@ -119,6 +119,8 @@ class MountVisualizer:
                 dec = self.mount.Declination
                 target_ra = self.mount.RightAscension
                 target_dec = self.mount.Declination
+                # target_ra = self.mount.TargetRightAscension
+                # target_dec = self.mount.TargetDeclination
 
                 # print(f"Current Position - Az: {az}, Alt: {alt}, RA: {ra}, Dec: {dec}")
                 # print(f"Target Position - RA: {target_ra}, Dec: {target_dec}")
@@ -173,6 +175,8 @@ class MountVisualizer:
     
     def on_close(self):
         """Handle window close event"""
+
+
         self.running = False
         self.root.quit()
         self.root.destroy()

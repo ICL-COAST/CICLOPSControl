@@ -5,9 +5,9 @@ from time import perf_counter
 import skyfield.api as sf
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                             QWidget, QPushButton, QSlider, QLabel, QComboBox,
-                            QFileDialog, QGroupBox, QDoubleSpinBox, QGridLayout)
+                             QGroupBox, QDoubleSpinBox, QGridLayout)
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QCloseEvent
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 import signal
@@ -16,6 +16,8 @@ import math
 import astropy.units as u
 import astropy.coordinates as coord
 from astropy.time import Time as astropy_time
+
+import win32com.client
 
 class SatelliteOrbitVisualizerGL(QMainWindow):
     """Main application window using OpenGL for 3D visualization"""
@@ -30,7 +32,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.satellites = {}
         # self.current_time = datetime.now()
         self.current_time = datetime(2025, 7, 15, 0, 0, 0)
-        self.time_step = timedelta(minutes=0.1)
+        self.time_step = timedelta(seconds=1)
         self.animation_speed = 1
 
         self.is_animating = False
@@ -55,8 +57,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.london_marker = None
         
         # London coordinates (latitude, longitude)
-        # self.london_lat = 51.5074  # degrees North
-        self.london_lat = 49  # degrees North
+        self.london_lat = 51.5074  # degrees North
+        # self.london_lat = 49  # degrees North
         self.london_lon = -0.1278  # degrees East (negative for West)
         
         # Load ephemeris for astronomical calculations
@@ -76,8 +78,37 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.animation_step)
 
+        self.mount_timer = QTimer()
+        self.mount_timer.timeout.connect(self.mount_step)
+        self.mount = None
+        self.mount_ra = 0
+        self.mount_dec = 0
+        self.mount_az = 0
+        self.mount_el = 0
+        self.mount_marker = None
+        self.tracking_satellite = False
+
+        self.azel_positions = None
+        self.azel_derivatives = None
+
+        self.az_integral_error = 0
+        self.el_integral_error = 0
+        self.az_last_error = 0
+        self.el_last_error = 0
+
         self.cycle_start = 0
+        self.dt = 0
         self.cycle_end = 0
+    def closeEvent(self, event: QCloseEvent):
+        self.stop_mount_motion()
+        event.accept()
+
+    def stop_mount_motion(self):
+        """Stop the mount motion and disconnect"""
+        if self.mount is not None:
+            self.mount.AbortSlew()
+            self.mount.MoveAxis(0, 0)
+            self.mount.MoveAxis(1, 0)
 
     def setup_ui(self):
         """Create the user interface"""
@@ -103,8 +134,11 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
 
         # Controls container
         controls_container = QWidget()
-        controls_layout = QHBoxLayout(controls_container)
-        
+        controls_layout = QVBoxLayout(controls_container)
+
+        controls_sublayout = QHBoxLayout()
+        controls_layout.addLayout(controls_sublayout)
+
         # Time controls group
         time_group = QGroupBox("Time Controls")
         time_layout = QVBoxLayout(time_group)
@@ -171,7 +205,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         trail_layout.addWidget(self.trail_spinbox)
         sat_layout.addLayout(trail_layout)
         
-        controls_layout.addWidget(sat_group)
+        controls_sublayout.addWidget(sat_group)
         
         # Camera/View Controls
         view_group = QGroupBox("View Controls")
@@ -181,7 +215,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         view_reset_btn.clicked.connect(self.reset_view)
         view_layout.addWidget(view_reset_btn)
         
-        controls_layout.addWidget(view_group)
+        controls_sublayout.addWidget(view_group)
         
         # Add controls to main layout
         main_layout.addWidget(controls_container)
@@ -189,6 +223,41 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Set the central widget
         self.setCentralWidget(main_widget)
+
+        # Mount Controls
+        mount_group = QGroupBox("Mount Controls")
+        mount_layout = QVBoxLayout(mount_group)
+        mount_btn_layout = QHBoxLayout()
+        self.track_btn = QPushButton("Start Tracking")
+        self.track_btn.clicked.connect(self.toggle_mount_tracking)
+        mount_btn_layout.addWidget(self.track_btn)
+
+        self.freeze_btn = QPushButton("Freeze Mount")
+        self.freeze_btn.clicked.connect(self.mount_freeze)
+        mount_btn_layout.addWidget(self.freeze_btn)
+
+        self.manual_slew_btn = QPushButton("Manual Slew")
+        self.manual_slew_btn.clicked.connect(self.manual_slew)
+        mount_btn_layout.addWidget(self.manual_slew_btn)
+
+        #Target Azimuth and Elevation
+        self.azimuth_label = QLabel("Azimuth (°):")
+        self.azimuth_spinbox = QDoubleSpinBox()
+        self.azimuth_spinbox.setRange(0, 360)
+        self.azimuth_spinbox.setValue(0)
+        self.azimuth_spinbox.setSingleStep(1)
+        mount_btn_layout.addWidget(self.azimuth_label)
+        mount_btn_layout.addWidget(self.azimuth_spinbox)
+        self.elevation_label = QLabel("Elevation (°):")
+        self.elevation_spinbox = QDoubleSpinBox()
+        self.elevation_spinbox.setRange(0, 90)
+        self.elevation_spinbox.setValue(0)
+        self.elevation_spinbox.setSingleStep(1)
+        mount_btn_layout.addWidget(self.elevation_label)
+        mount_btn_layout.addWidget(self.elevation_spinbox)
+
+        mount_layout.addLayout(mount_btn_layout)
+        controls_sublayout.addWidget(mount_group)
 
     def setup_3d_view(self):
         """Initialize the 3D view with Earth"""
@@ -288,7 +357,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         """
         # Get the current time in Skyfield format
         t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day,
-                    self.current_time.hour, self.current_time.minute, self.current_time.second)
+                    self.current_time.hour, self.current_time.minute, self.current_time.second + self.current_time.microsecond / 1000000.0)
         
         # Create a Skyfield Topos object for London's location
         london = sf.wgs84.latlon(self.london_lat, self.london_lon)
@@ -359,7 +428,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         Returns:
             tuple: (East, North) coordinates in sky chart coordinates
         """
-        radius = np.cos(elevation)  # Radius in the sky chart
+        # radius = np.cos(elevation)  # Radius in the sky chart
+        radius = 1 - elevation * 2 / np.pi
         east = - radius * np.sin(azimuth) # Negative x for East in sky chart
         north = radius * np.cos(azimuth)
         return east, north
@@ -369,25 +439,29 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         if self.is_animating:
             self.timer.stop()
             self.is_animating = False
+            self.dt = 0
             self.animation_btn.setText("Start Animation")
         else:
             # Set timer to 100fps (10ms interval)
             self.timer.start(10)
             self.is_animating = True
+            self.dt = 0
+            self.cycle_start = perf_counter()
+            self.cycle_end = perf_counter()
             self.animation_btn.setText("Stop Animation")
     
     def animation_step(self):
         """Perform one step in the animation"""
         # Advance time based on animation speed
-        self.current_time += self.time_step * self.animation_speed
-        self.time_label.setText(f"Current Time: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.current_time += self.time_step * self.animation_speed * self.dt
+        self.time_label.setText(f"Current Time: {self.current_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]}")
         
         # Update Earth-related elements
         self.update_terminator_circle()
         
         # Rotate the Earth mesh based on time
         # Earth rotates 15 degrees per hour (360/24)
-        utc_hour = self.current_time.hour + self.current_time.minute / 60.0 + self.current_time.second / 3600.0
+        utc_hour = self.current_time.hour + self.current_time.minute / 60.0 + self.current_time.second / 3600.0 + self.current_time.microsecond / 3600000000.0
         angle = (utc_hour * 15) % 360
         
         # Reset and apply rotation
@@ -408,7 +482,8 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
             self.last_trail_update = perf_counter()
         
         self.cycle_end = perf_counter()
-        # print(f"FPS: {1 / (self.cycle_end - self.cycle_start):.2f}")
+        print(f"FPS: {1 / (self.cycle_end - self.cycle_start):.2f}")
+        self.dt = self.cycle_end - self.cycle_start
         self.cycle_start = perf_counter()
 
 
@@ -422,7 +497,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         
         # Calculate current position in ITRS
         t = self.ts.utc(self.current_time.year, self.current_time.month, self.current_time.day, 
-                    self.current_time.hour, self.current_time.minute, self.current_time.second)
+                    self.current_time.hour, self.current_time.minute, self.current_time.second + self.current_time.microsecond / 1000000.0)
         
         # Get position in ITRS (Earth-fixed) frame
         current_pos = self.teme_to_itrs(satellite, t)
@@ -480,7 +555,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         start_time = self.current_time - timedelta(hours=trail_hours)
         
         # Calculate orbit points in ITRS
-        positions = self.compute_satellite_positions(satellite, start_time, self.current_time, points=50, use_itrs=True)
+        positions = self.compute_satellite_positions(satellite, start_time, self.current_time, points=100, use_itrs=True)
         
         # Create or update orbit trail
         if self.orbit_trail is None:
@@ -492,7 +567,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         # Create or update topographic trail
         topo_start = self.current_time - timedelta(minutes=5)
         topo_end = self.current_time + timedelta(minutes=5)
-        topo_positions = self.compute_satellite_positions(satellite, topo_start, topo_end, points=50, use_itrs=True)
+        topo_positions = self.compute_satellite_positions(satellite, topo_start, topo_end, points=100, use_itrs=True)
         topo_positions = [self.teme_to_topographic(pos) for pos in topo_positions]
         
         if self.topo_trail is None:
@@ -549,9 +624,10 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         obstime = astropy_time(self.current_time)
 
         sun_itrs = (self.sun - self.earth).at(t).position.km
-        sun_itrs = coord.SkyCoord(x=sun_itrs[0] * u.km, y=sun_itrs[1] * u.km, z=sun_itrs[2] * u.km, frame='itrs', obstime=obstime)
-        sun_pos = sun_itrs.transform_to('gcrs').cartesian.xyz.value
+        sun_itrs = coord.SkyCoord(x=sun_itrs[0] * u.km, y=sun_itrs[1] * u.km, z=sun_itrs[2] * u.km, frame='icrs', representation_type='cartesian', obstime=obstime)
+        sun_pos = sun_itrs.transform_to('itrs').cartesian.xyz.value
         sun_direction = sun_pos / np.linalg.norm(sun_pos)
+
         
         # Generate points for the terminator circle
         n_points = 100
@@ -672,6 +748,154 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.animation_speed = value
         # Don't change timer interval - keep it at 100fps
         # The speed now controls how much time advances per frame
+    
+    def mount_step(self):
+        self.update_mount_position()
+
+    def update_mount_position(self):
+        """Update mount position in the 3D view"""
+        if self.mount is None or not self.mount.Connected:
+            return
+        
+        # Get mount position
+        self.mount_ra = self.mount.RightAscension
+        self.mount_dec = self.mount.Declination
+        self.mount_az = self.mount.Azimuth
+        self.mount_el = self.mount.Altitude
+  
+        
+        east, north = self.azel_to_sky(np.radians(self.mount_az), np.radians(self.mount_el))
+
+        # Create or update mount marker in the sky chart
+        if self.mount_marker is None:
+            self.mount_marker = pg.ScatterPlotItem(
+                pen=pg.mkPen('g', width=2),
+                brush=pg.mkBrush(0, 0, 255, 200),
+                size=10
+            )
+            self.sky_widget.addItem(self.mount_marker)
+        else:
+            self.mount_marker.setData(pos=np.array([(east, north)]))
+            
+        if self.tracking_satellite:
+            if self.azel_derivatives is not None and self.azel_positions is not None:
+                # Find closest time in azel_derivatives
+                closest_time = min(self.azel_derivatives[:, 0], key=lambda t: abs(t - self.current_time))
+                closest_index = np.where(self.azel_derivatives[:, 0] == closest_time)[0][0]
+                # closest_index = np.where(self.azel_derivatives[:, 0] == closest_time)[0][0] + 13
+                
+                # Get azimuth and elevation derivatives
+                az_derivative = self.azel_derivatives[closest_index, 1]
+                el_derivative = self.azel_derivatives[closest_index, 2]
+
+                target_az = np.mod(self.azel_positions[closest_index][0][0], 2 * np.pi)
+                target_el = self.azel_positions[closest_index][0][1]
+
+                az_error = np.rad2deg(target_az) - self.mount_az
+                el_error = np.rad2deg(target_el) - self.mount_el
+
+                az_derivative_error = az_error - self.az_last_error
+                el_derivative_error = el_error - self.el_last_error
+
+                self.az_last_error = az_error
+                self.el_last_error = el_error
+                # Update integral errors
+                if self.dt > 0.01:
+                    self.az_integral_error += az_error * self.dt
+                    self.el_integral_error += el_error * self.dt
+                else:
+                    self.az_integral_error += az_error * 0.01
+                    self.el_integral_error += el_error * 0.01
+
+                # self.mount.AbortSlew()  # Stop any ongoing slew
+                # self.mount.SlewToAltAzAsync(np.mod(np.rad2deg(target_az), 360), np.rad2deg(target_el))
+
+                # print(f"Time: {closest_time}, Az Derivative: {az_derivative:.4f}, El Derivative: {el_derivative:.4f}")
+
+                kp = 10
+                kd = 0
+                ki = 0
+                az_nudge = kp * az_error + kd * az_derivative_error + ki * self.az_integral_error
+                el_nudge = kp * el_error + kd * el_derivative_error + ki * self.el_integral_error
+                # print(f"Az Nudge: {az_nudge:.2f}, El Nudge: {el_nudge:.2f}, Az Error: {az_error:.2f}, El Error: {el_error:.2f}, Az Integral Error: {self.az_integral_error:.2f}, El Integral Error: {self.el_integral_error:.2f}")
+
+                # Move mount based on derivatives
+                self.mount.MoveAxis(0, np.clip(np.rad2deg(az_derivative) + az_nudge, -5, 5))
+                self.mount.MoveAxis(1, np.clip(np.rad2deg(el_derivative) + el_nudge, -5, 5))
+
+    def toggle_mount_tracking(self):
+        """Toggle mount tracking on/off"""
+        if self.mount:
+        # if True:
+            self.az_integral_error = 0
+            self.el_integral_error = 0
+
+            if not self.tracking_satellite:
+                self.track_btn.setText("Stop Tracking")
+                self.tracking_satellite = True
+                sat_name = self.sat_combo.currentText()
+                satellite = self.satellites[sat_name]
+                itrs_positions = self.compute_satellite_positions(satellite, self.current_time, self.current_time + timedelta(minutes=10), points=10000, use_itrs=True)
+                topo_positions = np.array([self.teme_to_topographic(pos) for pos in itrs_positions])
+                timedeltas = np.linspace(0, timedelta(minutes=10).total_seconds(), 10000)
+                times = np.array([self.current_time + timedelta(seconds=t) for t in timedeltas])
+                # print(times.shape, topo_positions.shape)
+
+                azel_values = np.array([self.topo_to_azel(pos) for pos in topo_positions])
+                az_values = azel_values[:, 0]  # First column is azimuth
+                el_values = azel_values[:, 1]  # Second column is elevation
+                
+                # Store positions and times separately or as a list of tuples
+                self.azel_positions = [(azel, time) for azel, time in zip(azel_values, times)]
+
+                az_unwrapped = np.unwrap(az_values)
+
+                az_derivatives = np.gradient(az_unwrapped, timedeltas)
+                el_derivatives = np.gradient(el_values, timedeltas)
+
+                self.azel_derivatives = np.column_stack((times, az_derivatives, el_derivatives))
+
+            else:
+                self.tracking_satellite = False
+                self.mount.MoveAxis(0, 0)  # Stop all movement
+                self.mount.MoveAxis(1, 0)
+                self.track_btn.setText("Start Tracking")
+
+    def mount_freeze(self):
+        """Toggle mount freeze on/off"""
+        if self.mount:
+            self.stop_mount_motion()
+            self.tracking_satellite = False
+            self.track_btn.setText("Start Tracking")
+        
+    def manual_slew(self):
+        """Slew mount to specified azimuth and elevation"""
+        if self.mount:
+            azimuth = self.azimuth_spinbox.value()
+            elevation = self.elevation_spinbox.value()
+            self.mount.SlewToAltAzAsync(azimuth, elevation)
+
+def connect_to_mount(driver_id=None):
+    """Connect to mount - either specific driver or show chooser"""
+    if driver_id is None:
+        # Launch ASCOM Chooser to select mount
+        chooser = win32com.client.Dispatch("ASCOM.Utilities.Chooser")
+        chooser.DeviceType = "Telescope"
+        driver_id = chooser.Choose(None)
+        if not driver_id:
+            print("No mount selected")
+            return None
+    
+    # Create mount instance
+    mount = win32com.client.Dispatch(driver_id)
+    
+    # Connect to the mount
+    if not mount.Connected:
+        mount.Connected = True
+
+    print(f"Connected to: {mount.Description}")
+    
+    return mount
 
 
 if __name__ == "__main__":
@@ -680,8 +904,8 @@ if __name__ == "__main__":
     
     app = QApplication(sys.argv)
     window = SatelliteOrbitVisualizerGL()
-    screen = app.screens()[1]
-    window.move(screen.geometry().topLeft())
+    # screen = app.screens()[1]
+    # window.move(screen.geometry().topLeft())
     window.maximumSize()
 
 
@@ -689,6 +913,7 @@ if __name__ == "__main__":
 
     def signal_handler(signal, frame):
         """Handle exit signal"""
+        window.stop_mount_motion()
         app.quit()
         sys.exit(0)
     
@@ -696,5 +921,10 @@ if __name__ == "__main__":
     timer = QTimer()
     timer.start(100)  # Small interval to check signals
     timer.timeout.connect(lambda: None)
+    
+    mount = connect_to_mount("ASCOM.Simulator.Telescope")
+    if mount:
+        window.mount = mount
+        window.mount_timer.start(10) #100hz loop
 
     sys.exit(app.exec())

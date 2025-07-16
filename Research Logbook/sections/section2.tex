@@ -87,10 +87,10 @@ Second meeting with Dr Amato.
         \item Cd in terminal to \verb|dev/local_db|
         \item \verb|docker build -t satchecker-db .|
         \item \verb|docker volume create satchecker_db_vol|
-        \item \verb|docker run -d --name satchecker-db -v satchecker_db_vol:/var/lib/postgresql/data -p 5432:5432 satchecker-db|
+        \item \lstinline{docker run -d --name satchecker-db -v satchecker_db_vol:/var/lib/postgresql/data -p 5432:5432 satchecker-db} 
         \item Go to \verb|src/api| and run the following commands to retrieve TLEs:
-        \item \verb|python retrieve_TLE.py -m gp -s localhost -p 5432 -d postgres -u postgres -pw sat123 -sc celestrak|
-        \item \verb|python retrieve_TLE.py -m sup -s localhost -p 5432 -d postgres -u postgres -pw sat123 -sc celestrak|
+        \item \lstinline{python retrieve_TLE.py -m gp -s localhost -p 5432 -d postgres -u postgres -pw sat123 -sc celestrak}
+        \item \lstinline{python retrieve_TLE.py -m sup -s localhost -p 5432 -d postgres -u postgres -pw sat123 -sc celestrak}
         \item Download redis from \href{https://github.com/tporadowski/redis/releases}{here} through the installer
         \item In one terminal instance (I was using powershell) run \verb|$env:PYTHONPATH = "C:\...Yourpath...\satchecker\src"|
         \item Then run \verb|flask run| 
@@ -103,5 +103,23 @@ Second meeting with Dr Amato.
     \item This seems a bit too complicated to get working, but I had it installed.
     \item ONLY works on python 3.8-3.10, it can only be ran like that! The only way I got it to install was through this github \href{https://github.com/mworion/InstallerMW4/releases}{release page} and this \href{https://www.youtube.com/watch?v=Tzob8ZSnMH0}{youtube video}.
     \item Obviously use python10.exe instead of python for the video.
+    \end{itemize}
+
+    Amato Notes
+    \begin{itemize}
+        \item Moon and stars in the sky chart - Helpful for visual observation, magnitude 2
+        \item Satchecker might be nice to contribute to open source
+        \item Automate satchecker, spacetrack
+        \item CICLOPS Control github repo on COAST
+        \item Fork satchecker to COAST with our own branch
+        \item Pay attention when I handle it because there are clutches. When the clutches are tightened, the mount is engaged, the motor is engaged to the axis, when the clutch is disengaged the motor is not engaged. When I handle the mount I must have the clutch disengaged.
+        \item Go to room 309 and ask biruk to help.
+        \item 
+\end{itemize}
+SATCHECKER WORKING!!!
+\begin{itemize}
+    \item \begin{lstlisting}
+        http://localhost:5000/ephemeris/name-jdstep/?name=ISS%20(ZARYA)&latitude=51.4915&longitude=-0.2073&elevation=222&startjd=2460871&stopjd=2460872&stepjd=0.01
+    \end{lstlisting}
 \end{itemize}
 \end{document}
