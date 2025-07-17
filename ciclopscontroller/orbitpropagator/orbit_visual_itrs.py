@@ -268,9 +268,9 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.view_widget.setCameraPosition(distance=40000)
         
         # Add coordinate axes
-        axis = gl.GLAxisItem()
-        axis.setSize(10000, 10000, 10000)
-        self.view_widget.addItem(axis)
+        # axis = gl.GLAxisItem()
+        # axis.setSize(10000, 10000, 10000)
+        # self.view_widget.addItem(axis)
         
         # Add Earth
         # sphere_mesh = gl.MeshData.sphere(rows=40, cols=40, radius=self.earth_radius)
@@ -291,10 +291,20 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         self.view_widget.addItem(self.earth_mesh)
 
         # Grid
-        grid = gl.GLGridItem()
-        grid.setSize(20000, 20000)
-        grid.setSpacing(1000, 1000)
-        self.view_widget.addItem(grid)
+        # grid = gl.GLGridItem()
+        # grid.setSize(20000, 20000)
+        # grid.setSpacing(1000, 1000)
+        # self.view_widget.addItem(grid)
+
+        equator_circle = gl.GLLinePlotItem(
+            pos=np.array([[self.earth_radius * np.cos(np.radians(angle)), self.earth_radius * np.sin(np.radians(angle)), 0] for angle in range(0, 365, 5)]),
+            color=(1, 1, 0, 0.5),
+            width=1,
+            antialias=True
+        )
+        equator_circle.setGLOptions('opaque')
+        self.view_widget.addItem(equator_circle)
+
 
         #Setup topological view
         self.topo_widget.setCameraPosition(distance=1000)
@@ -626,7 +636,7 @@ class SatelliteOrbitVisualizerGL(QMainWindow):
         if self.london_marker is None:
             self.london_marker = gl.GLScatterPlotItem(
                 pos=np.array([london_itrs_pos]),
-                color=(1, 0, 0, 1),  # Red color
+                color=(0, 1, 0, 1),  # Red color
                 size=10
             )
             self.london_marker.setGLOptions('opaque')
