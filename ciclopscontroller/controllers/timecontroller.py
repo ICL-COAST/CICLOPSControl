@@ -10,8 +10,7 @@ class TimeController(QObject):
         self._epoch = datetime(2025, 7, 14, 22, 24, 0)
         self._time_since_epoch: float = 0
         self._speed: float = 1
-        self._reference_counter: float = 0
-        self._reference_time: float = 0
+        self._last_perfcounter: float = 0
         self._cycles = 0
         self._running = False
         self._mutex = QMutex()
@@ -34,12 +33,10 @@ class TimeController(QObject):
     def start_playback(self) -> None:
         if self._timer is None:
             raise Exception("Timer not initialized. Call initialize_timer() first.")
-        with QMutexLocker(self._mutex):
-            self._reference_counter = perf_counter()
-            self._reference_time = self._time_since_epoch
-            self._running = True
         self._timer.start(1)
-        
+        with QMutexLocker(self._mutex):
+            self._last_perfcounter = perf_counter()
+            self._running = True
 
     Slot()
     def stop_playback(self) -> None:
@@ -52,24 +49,20 @@ class TimeController(QObject):
     Slot()
     def run(self) -> None:
         with QMutexLocker(self._mutex):
-            current_counter = perf_counter()
-            elapsed_real_time = current_counter - self._reference_counter
+            new_perfcounter = perf_counter()
+            dt = new_perfcounter - self._last_perfcounter
+            self._last_perfcounter = new_perfcounter
 
-            self._time_since_epoch = self._reference_time + elapsed_real_time * self._speed
+            self._time_since_epoch += dt * self._speed
 
             if self._cycles % 1000 == 0:
-                print(f"{self._time_since_epoch:.2f} seconds, Cycles: {self._cycles}, speed: {self._speed}x, Real Time = {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')[:-2]}, Counter = {current_counter-self._reference_counter:.2f}, Reference Time = {self._reference_time:.2f}")
+                print(f"{self._time_since_epoch:.2f} seconds, Cycles: {self._cycles}, speed: {self._speed}x, Real Time = {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')[:-2]}")
 
             self._cycles += 1
         
     Slot()
     def set_speed(self, speed):
         with QMutexLocker(self._mutex):
-            current_counter = perf_counter()
-            elapsed_real_time = current_counter - self._reference_counter
-
-            self._reference_time += elapsed_real_time * self._speed
-            self._reference_counter = current_counter
             self._speed = speed
         
     Slot()
@@ -80,14 +73,9 @@ class TimeController(QObject):
             else:
                 self._time_since_epoch = time_since_epoch
 
-            self._reference_counter = perf_counter()
-            self._reference_time = self._time_since_epoch
-
     Slot()
     def set_epoch(self, new_datetime: datetime):
         self.stop_playback()
         with QMutexLocker(self._mutex):
             self._epoch = new_datetime
             self._time_since_epoch = 0
-            self._reference_counter = perf_counter()
-            self._reference_time = 0
