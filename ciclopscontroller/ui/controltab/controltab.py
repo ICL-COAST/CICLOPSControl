@@ -37,7 +37,7 @@ class ControlTab(QWidget):
 
         controls_box = QVBoxLayout()
 
-        self.time_control_box = TimeControlBox(self.time_controller)
+        self.time_control_box = TimeControlBox(self.time_controller, lambda: self.update_views(override=True))
         self.mount_control_box = MountControlBox(self.mount_controller)
         controls_box.addWidget(self.time_control_box)
         controls_box.addWidget(self.mount_control_box)
@@ -49,10 +49,10 @@ class ControlTab(QWidget):
         self.setLayout(main_layout)
 
         self._timer = QTimer()
-        self._timer.timeout.connect(self.updateViews)
+        self._timer.timeout.connect(self.update_views)
         self._timer.start(50)
 
-    def updateViews(self, override=False):
+    def update_views(self, override=False):
         self.time_control_box.update_time()
 
         if self.time_controller.get_running() or override:

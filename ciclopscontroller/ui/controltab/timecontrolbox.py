@@ -2,14 +2,16 @@ from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QLabel, QSlider, QPushButt
 from PySide6.QtCore import Qt
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from typing import Callable
 
 from ciclopscontroller.controllers.timecontroller import TimeController
 
 class TimeControlBox(QGroupBox):
-    def __init__(self, time_controller: TimeController):
+    def __init__(self, time_controller: TimeController, force_update: Callable[[], None]):
         super().__init__()
 
         self.time_controller = time_controller
+        self.force_update = force_update
 
         self.setTitle("Time Control")
         time_layout = QVBoxLayout()
@@ -50,7 +52,7 @@ class TimeControlBox(QGroupBox):
         playback_layout.addWidget(self.playback_btn)
 
         self.zero_time_btn = QPushButton("Reset Time")
-        self.zero_time_btn.clicked.connect(lambda: self.time_slider.setValue(0))
+        self.zero_time_btn.clicked.connect(self.zero_btn_clicked)
         playback_layout.addWidget(self.zero_time_btn)
 
         self.now_btn = QPushButton("Set to Now")
@@ -71,6 +73,9 @@ class TimeControlBox(QGroupBox):
         self.speed_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.speed_slider.valueChanged.connect(self.on_speed_slider_changed)
         speed_layout.addWidget(self.speed_slider)
+        self.speed_reset_btn = QPushButton("Reset Speed")
+        self.speed_reset_btn.clicked.connect(self.on_speed_reset_btn_clicked)
+        speed_layout.addWidget(self.speed_reset_btn)
         playback_layout.addLayout(speed_layout)
         time_layout.addLayout(playback_layout)
         self.setLayout(time_layout)
@@ -81,7 +86,8 @@ class TimeControlBox(QGroupBox):
         self.update_time_slider(self.time_controller._time_since_epoch)
 
     def on_time_slider_changed(self, value):
-        if self.time_slider.isSliderDown():
+        if self.time_slider.isSliderDown(): # without this it ran at every slider tick it would set the time, changing timecontroller reference and running way faster than expected!
+            self.force_update()
             self.time_controller.set_time(time_since_epoch=value)
 
     def update_time_label(self, datetime_: datetime):
@@ -119,6 +125,8 @@ class TimeControlBox(QGroupBox):
         self.speed_label.setText(f"Speed: {formatted}x")
 
         self.time_controller.set_speed(speed_factor)
+    def zero_btn_clicked(self):
+        self.time_controller.set_time(time_since_epoch=0)
 
     def now_btn_clicked(self):
         self.time_controller.set_time(now=True)
@@ -127,4 +135,6 @@ class TimeControlBox(QGroupBox):
         self.time_controller.set_time(now=True)
         self.playback_btn.setChecked(True)
         self.toggle_playback()
-
+    
+    def on_speed_reset_btn_clicked(self):
+        self.speed_slider.setValue(0)

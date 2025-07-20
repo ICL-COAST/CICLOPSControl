@@ -1,15 +1,15 @@
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
+from PySide6.QtGui import QVector3D
 
 from ciclopscontroller.controllers.satcontroller import SatController
 from ciclopscontroller.controllers.timecontroller import TimeController
-
 from ciclopscontroller.ui.glitems.glsphere import GLSphere
 
 import numpy as np
 
 class OrbitView(gl.GLViewWidget):
-    def __init__(self, sat_controller, time_controller):
+    def __init__(self, sat_controller: SatController, time_controller: TimeController):
         super().__init__()
 
         self.sat_controller = sat_controller
@@ -45,7 +45,8 @@ class OrbitView(gl.GLViewWidget):
         self.addItem(self.sat_trail)
 
         self.observer_marker = gl.GLScatterPlotItem(
-            pos = np.array([[0, 0, self.earth_radius]])
+            pos = self.sat_controller.get_observer_position(),
+            color = (0, 1, 0, 1),  # Green color for observer
         )
         self.observer_marker.setGLOptions('opaque')
         self.addItem(self.observer_marker)
@@ -59,7 +60,7 @@ class OrbitView(gl.GLViewWidget):
             for i in range(n_points + 1):
                 angle = 2 * np.pi * i / n_points
                 x = circle_radius * np.cos(angle)
-                y = 0
+                y = self.earth_radius * np.sin(j / n_circles * np.pi / 2)
                 z = circle_radius * np.sin(angle)
                 circle_points.append([x, y, z])
             self.terminator.append(gl.GLLinePlotItem(
@@ -90,7 +91,9 @@ class OrbitView(gl.GLViewWidget):
         sat_position = self.sat_controller.get_sat_position()
         sat_trail_positions = self.sat_controller.get_trail_positions(-60, 60, 100)
         if sat_position is not None:
-            self.sat_marker.setData(pos=np.array([sat_position]))
+            self.sat_marker.setData(pos=np.array(sat_position))
+            sat_pos_qt = QVector3D(*sat_position[0])
+            self.setCameraPosition(pos=sat_pos_qt, distance=150)
         if sat_trail_positions is not None:
             self.sat_trail.setData(pos=np.array(sat_trail_positions))
 
@@ -112,9 +115,9 @@ class OrbitView(gl.GLViewWidget):
             angles = np.linspace(0, 2 * np.pi, 100)
             circle_radius = self.earth_radius * np.cos(i / len(self.terminator) * np.pi / 2)
             circle.setData(pos=
-                           np.cos(angles) * u_vector * circle_radius +
-                           np.sin(angles) * v_vector * circle_radius +
-                            sun_direction * self.earth_radius * np.sin(i / len(self.terminator) * np.pi / 2)
+                           np.cos(angles)[:, None] * u_vector * circle_radius +
+                           np.sin(angles)[:, None] * v_vector * circle_radius +
+                           sun_direction * self.earth_radius * np.sin(i / len(self.terminator) * np.pi / 2)
                            )
                 
             

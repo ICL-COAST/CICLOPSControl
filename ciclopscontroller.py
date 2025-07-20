@@ -52,3 +52,4 @@ if __name__ == "__main__":
     timer.start(100)
 
     sys.exit(app.exec())
+    print("Application started.")
