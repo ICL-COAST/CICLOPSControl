@@ -959,7 +959,8 @@ if __name__ == "__main__":
     timer.start(100)  # Small interval to check signals
     timer.timeout.connect(lambda: None)
     
-    mount = connect_to_mount("ASCOM.Simulator.Telescope")
+    # mount = connect_to_mount("ASCOM.Simulator.Telescope")
+    mount = connect_to_mount()
     if mount:
         window.mount = mount
         window.mount_timer.start(10) #100hz loop
