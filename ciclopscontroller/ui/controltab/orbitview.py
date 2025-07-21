@@ -2,7 +2,7 @@ import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from PySide6.QtGui import QVector3D
 
-from ciclopscontroller.controllers.satcontroller import SatController
+from ciclopscontroller.controllers.satcontroller import SatController, PositionFrame
 from ciclopscontroller.controllers.timecontroller import TimeController
 from ciclopscontroller.ui.glitems.glsphere import GLSphere
 
@@ -21,7 +21,7 @@ class OrbitView(gl.GLViewWidget):
         self.animation_update()
 
     def setup_ui(self):
-        self.setCameraPosition(distance=15000)
+        self.setCameraPosition(distance=300)
         self.setBackgroundColor('k')
 
         self.add_earth()
@@ -50,6 +50,13 @@ class OrbitView(gl.GLViewWidget):
         )
         self.observer_marker.setGLOptions('opaque')
         self.addItem(self.observer_marker)
+
+        north_marker = gl.GLScatterPlotItem(
+            pos = np.array([[0, 0, 10000]]),  # Example position for north marker
+            color = (1, 0, 0, 1),  # Red color for north marker
+            size = 20
+        )
+        self.addItem(north_marker)
 
         n_circles = 5
         n_points = 100
@@ -88,12 +95,13 @@ class OrbitView(gl.GLViewWidget):
         self.addItem(self.earth_mesh)
     
     def animation_update(self):
-        sat_position = self.sat_controller.get_sat_position()
-        sat_trail_positions = self.sat_controller.get_trail_positions(-60, 60, 100)
+        sat_position = self.sat_controller.get_sat_position(PositionFrame.ITRS)
+        sat_trail_positions = self.sat_controller.get_trail_positions(-30, 60, 100, PositionFrame.ITRS)
+
         if sat_position is not None:
             self.sat_marker.setData(pos=np.array(sat_position))
             sat_pos_qt = QVector3D(*sat_position[0])
-            self.setCameraPosition(pos=sat_pos_qt, distance=150)
+            self.setCameraPosition(pos=sat_pos_qt)
         if sat_trail_positions is not None:
             self.sat_trail.setData(pos=np.array(sat_trail_positions))
 

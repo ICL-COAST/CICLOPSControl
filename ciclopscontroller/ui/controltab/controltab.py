@@ -50,12 +50,12 @@ class ControlTab(QWidget):
 
         self._timer = QTimer()
         self._timer.timeout.connect(self.update_views)
-        self._timer.start(50)
+        self._timer.start(20)
 
     def update_views(self, override=False):
         self.time_control_box.update_time()
 
         if self.time_controller.get_running() or override:
             self.orbit_view.animation_update()
-            # self.topo_view.animation_update()
-            # self.skychart_view.animation_update()
+            self.topo_view.animation_update()
+            self.skychart_view.animation_update()

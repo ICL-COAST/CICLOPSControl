@@ -50,6 +50,6 @@ if __name__ == "__main__":
     timer = QTimer()
     timer.timeout.connect(lambda: None)
     timer.start(100)
+    print("Application started.")
 
     sys.exit(app.exec())
-    print("Application started.")

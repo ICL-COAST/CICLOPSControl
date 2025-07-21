@@ -86,8 +86,8 @@ class TimeControlBox(QGroupBox):
         self.update_time_slider(self.time_controller._time_since_epoch)
 
     def on_time_slider_changed(self, value):
+        self.force_update()
         if self.time_slider.isSliderDown(): # without this it ran at every slider tick it would set the time, changing timecontroller reference and running way faster than expected!
-            self.force_update()
             self.time_controller.set_time(time_since_epoch=value)
 
     def update_time_label(self, datetime_: datetime):
